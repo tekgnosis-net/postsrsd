@@ -1,0 +1,64 @@
+name: Build and publish
+
+on:
+  schedule:
+    - cron: '0 6 * * *'
+  push:
+    branches: [main]
+    paths:
+      - Dockerfile
+      - .github/workflows/build-and-publish.yml
+  workflow_dispatch:
+    inputs:
+      version_override:
+        description: 'Override the detected Alpine APK version (e.g. 2.0.11-r0)'
+        required: false
+        type: string
+
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  IMAGE: ghcr.io/${{ github.repository_owner }}/postsrsd
+  ALPINE_BRANCH: v3.22
+
+jobs:
+  detect-version:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      apk_version: ${{ steps.detect.outputs.apk_version }}
+      current_pin: ${{ steps.detect.outputs.current_pin }}
+      bumped: ${{ steps.detect.outputs.bumped }}
+      should_publish: ${{ steps.detect.outputs.should_publish }}
+    steps:
+      - id: detect
+        run: |
+          echo "apk_version=stub"      >> "$GITHUB_OUTPUT"
+          echo "current_pin=stub"      >> "$GITHUB_OUTPUT"
+          echo "bumped=false"          >> "$GITHUB_OUTPUT"
+          echo "should_publish=false"  >> "$GITHUB_OUTPUT"
+
+  bump-dockerfile:
+    needs: detect-version
+    if: github.event_name == 'schedule' && needs.detect-version.outputs.bumped == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - run: echo "filled in by task 8"
+
+  build-and-push:
+    needs: [detect-version, bump-dockerfile]
+    if: |
+      always() &&
+      needs.detect-version.outputs.should_publish == 'true' &&
+      (needs.bump-dockerfile.result == 'success' || needs.bump-dockerfile.result == 'skipped')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - run: echo "filled in by task 9"
