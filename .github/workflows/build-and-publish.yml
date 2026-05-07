@@ -85,7 +85,29 @@ jobs:
     permissions:
       contents: write
     steps:
-      - run: echo "filled in by task 8"
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Bump POSTSRSD_PACKAGE_VERSION in Dockerfile
+        env:
+          NEW_VERSION: ${{ needs.detect-version.outputs.apk_version }}
+        run: |
+          set -euo pipefail
+          sed -i "s/^ARG POSTSRSD_PACKAGE_VERSION=.*/ARG POSTSRSD_PACKAGE_VERSION=${NEW_VERSION}/" Dockerfile
+          grep -E '^ARG POSTSRSD_PACKAGE_VERSION=' Dockerfile
+
+      - name: Commit and push
+        env:
+          NEW_VERSION: ${{ needs.detect-version.outputs.apk_version }}
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add Dockerfile
+          git commit -m "chore(deps): bump postsrsd to ${NEW_VERSION}"
+          git push origin main
 
   build-and-push:
     needs: [detect-version, bump-dockerfile]
