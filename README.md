@@ -2,7 +2,7 @@
 
 A Docker image of [PostSRSd](https://github.com/roehling/postsrsd) packaged for use as a sidecar in [mailcow](https://mailcow.email/) deployments. Implements the [Sender Rewriting Scheme](https://en.wikipedia.org/wiki/Sender_Rewriting_Scheme) so a forwarding mailcow instance can rewrite envelope senders to pass SPF at the next hop.
 
-This image and its accompanying configs grew out of [mailcow issue #2418](https://github.com/mailcow/mailcow-dockerized/issues/2418), specifically [ethrgeist's deployment writeup](https://github.com/mailcow/mailcow-dockerized/issues/2418#issuecomment-3416844091). It packages that work as a published, multi-arch image with documentation that fills in the bits the issue thread under-explained — DNS, mailcow domain registration, Dovecot Sieve, and tag pinning.
+This image and its accompanying configs grew out of a need for SRS for my own mailcow deployment and large part from [mailcow issue #2418](https://github.com/mailcow/mailcow-dockerized/issues/2418), specifically [ethrgeist's deployment writeup](https://github.com/mailcow/mailcow-dockerized/issues/2418#issuecomment-3416844091). It packages that work as a published, multi-arch image with documentation that fills in the bits the issue thread under-explained — DNS, mailcow domain registration, Dovecot Sieve, and tag pinning.
 
 ## Image
 
@@ -27,12 +27,12 @@ The version tag matches the Alpine `community/postsrsd` APK version, including t
 
 ### 1. Choose your SRS domain
 
-Pick a **dedicated subdomain** of one of your hosted domains. For the rest of this tutorial we will use `srs.example.com` as a placeholder — substitute your real value throughout.
+Pick a **dedicated subdomain** of one of your hosted domains, it would be preferred to use the mailcow domain as it has the reverse DNS, DKIM, DMARC and SPF already in use, set & validated. For the rest of this tutorial we will use `srs.example.com` as a placeholder — substitute your real value throughout.
 
 Two reasons to use a dedicated subdomain rather than a real user-facing domain:
 
 - The SRS domain appears in `Return-Path:` headers of forwarded mail — it is internal infrastructure, not a public face.
-- Upstream PostSRSd recommends a dedicated SRS domain *"if you serve multiple unrelated domains, to prevent privacy issues"* — without one, bounces for forwards from one tenant carry the SRS domain of another tenant.
+- Upstream [PostSRSd](https://github.com/roehling/postsrsd) recommends a dedicated SRS domain *"if you serve multiple unrelated domains, to prevent privacy issues"* — without one, bounces for forwards from one tenant carry the SRS domain of another tenant.
 
 ### 2. Configure DNS for the SRS domain
 
@@ -50,7 +50,7 @@ When postsrsd rewrites a forwarded message, it changes the envelope sender from 
 | Record | Value | Why |
 | :-- | :-- | :-- |
 | `srs.example.com.` `A` | mailcow's public IPv4 | Lets mailcow accept inbound bounces; lets ACME pass HTTP-01 challenge for the TLS cert. |
-| `srs.example.com.` `AAAA` | mailcow's public IPv6 (if available) | Same as A; modern receivers prefer IPv6. |
+| `srs.example.com.` `AAAA` | mailcow's public IPv6 (if available) | **(OPT)** _Same as A but for IPv6; modern receivers prefer IPv6._ |
 | `srs.example.com.` `MX 10` | mailcow's MX hostname (typically the same as your other domains' MX, e.g. `mail.example.com.`) | Receivers look up MX to deliver bounces back to mailcow. |
 | `srs.example.com.` `TXT` | `"v=spf1 mx -all"` | Authorises whatever the SRS domain's MX resolves to as a sender, since forwarded mail re-leaves through that MX. |
 | `_dmarc.srs.example.com.` `TXT` | `"v=DMARC1; p=none; rua=mailto:dmarc@example.com"` | Optional. `p=none` because forwarded mail can't satisfy stricter alignment. |
@@ -61,7 +61,7 @@ When postsrsd rewrites a forwarded message, it changes the envelope sender from 
 
 ### 3. Register the SRS domain in mailcow — the easy-to-miss step
 
-Skipping this step is the single most common SRS-on-mailcow mistake. Bounces will fail at SMTP time before postsrsd's reverse map ever fires.
+Skipping this step is perhaps, the single most common SRS-on-mailcow mistake. Bounces will fail at SMTP time before postsrsd's reverse map ever fires.
 
 #### Why two settings, not one
 
@@ -97,6 +97,7 @@ The fix is to put the SRS domain into Postfix's `virtual_alias_maps` instead, by
 In the commands below, `<this-repo>` is the directory where you have cloned (or downloaded a tarball of) the [postsrsd repository](https://github.com/tekgnosis-net/postsrsd). Substitute the actual path on your host.
 
 ```bash
+cd /opt/mailcow-dockerized
 mkdir -p data/conf/postsrsd
 cp <this-repo>/conf/postsrsd.conf data/conf/postsrsd/postsrsd.conf
 $EDITOR data/conf/postsrsd/postsrsd.conf
@@ -121,7 +122,7 @@ What NOT to put in it:
 
 - The `srs-domain` is allowed but not required to appear. Listing it does no harm; leaving it out is also fine because reverse-rewriting is driven by `recipient_canonical_maps`, not by `domains`.
 - Domains your users forward *to* (e.g. `gmail.com`) — those are exactly the foreign senders SRS needs to rewrite.
-- Subdomains are not implicitly matched. If you accept mail for both `example.com` and `news.example.com`, list both.
+- Subdomains are not implicitly matched. If you accept mail for both `example.com` and `blog.example.com`, list both.
 
 For multi-tenant setups with many domains, use postsrsd's `domains-file` option (see the comment in the sample `postsrsd.conf`) and feed it a one-domain-per-line file.
 
@@ -197,7 +198,7 @@ docker compose logs postsrsd-mailcow | tail -20
 | `POSTSRSD_PACKAGE_VERSION` | build ARG | (current pinned version) | n/a |
 | `POSTSRSD_SECRET_DIR_PATH` | build ARG | `/etc/postsrsd/secrets` | n/a |
 
-**Footgun on `POSTSRSD_SECRET_PATH`:** the Dockerfile sets this `ENV`, so it appears tweakable, but the daemon reads its secrets-file path from `/etc/postsrsd/postsrsd.conf` (sed-patched at *build* time). Overriding the env at runtime causes the auto-generation to write the secret to the new path while postsrsd still reads from the old path — empty file, daemon fails to start. Treat it as a build-time decision; rebuild with `--build-arg POSTSRSD_SECRET_DIR_PATH=/your/path` if you genuinely need a different path.
+**Note on `POSTSRSD_SECRET_PATH`:** the Dockerfile sets this `ENV`, so it appears tweakable, but the daemon reads its secrets-file path from `/etc/postsrsd/postsrsd.conf` (sed-patched at *build* time). Overriding the env at runtime causes the auto-generation to write the secret to the new path while postsrsd still reads from the old path — empty file, daemon fails to start. Treat it as a build-time decision; rebuild with `--build-arg POSTSRSD_SECRET_DIR_PATH=/your/path` if you genuinely need a different path.
 
 **No `.env.example` file ships with this repo.** mailcow's `mailcow.conf` already supplies the env vars the override yml substitutes from (`${IPV4_NETWORK}`, `${TZ}`). A separate `.env.example` would compete with `mailcow.conf` for the same values and create ambiguity.
 
@@ -264,10 +265,9 @@ If you specifically need milter mode (e.g., to integrate alongside a non-Postfix
 
 ## Acknowledgements
 
-- [ethrgeist](https://github.com/mailcow/mailcow-dockerized/issues/2418#issuecomment-3416844091) — the deployment writeup that the Dockerfile and configs are based on.
-- [mailcow issue #2418](https://github.com/mailcow/mailcow-dockerized/issues/2418) — the originating discussion thread.
-- [nowhere.dk's *Implementing SRS with Mailcow*](https://nowhere.dk/articles/implementing-srs-with-mailcow/) — surfaced the Dovecot Sieve `sieve_redirect_envelope_from` requirement.
 - Timo Röhling and the upstream [postsrsd](https://github.com/roehling/postsrsd) project.
+- [nowhere.dk's *Implementing SRS with Mailcow*](https://nowhere.dk/articles/implementing-srs-with-mailcow/) — surfaced the Dovecot Sieve `sieve_redirect_envelope_from` requirement.
+- [ethrgeist](https://github.com/mailcow/mailcow-dockerized/issues/2418#issuecomment-3416844091) — the deployment writeup that the Dockerfile and configs are based on.
 
 ## License
 
