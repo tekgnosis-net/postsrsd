@@ -70,7 +70,10 @@ When a bounce comes back to `srs0=…@srs.example.com`, Postfix has to do two th
 1. **Accept the recipient at SMTP time.** This happens in the `smtpd` daemon, very early. Mailcow uses MySQL-backed virtual maps; adding the SRS domain to the `domain` table puts it in `virtual_mailbox_domains`, but `virtual_mailbox_maps` then expects a *specific* mailbox. `srs0=…` is never a real mailbox, so Postfix rejects with "User unknown in virtual mailbox table".
 2. **Rewrite the recipient back to the original.** This happens later, in the `cleanup` daemon, via the `recipient_canonical_maps` socketmap query to postsrsd. By then it is too late — the recipient was already rejected at step 1.
 
-The fix is to put the SRS domain into Postfix's `virtual_alias_maps` instead, by adding a **catch-all alias**. `virtual_alias_maps` accepts arbitrary local-parts on the listed domain, satisfying step 1. Step 2 then works as designed because `recipient_canonical_maps` is consulted in `cleanup` *before* the catch-all alias rewriting fires, so `srs0=…@srs.example.com` is matched against the postsrsd reverse map first and never resolves through the catch-all.
+The fix is to put the SRS domain into Postfix's `virtual_alias_maps` instead, by adding a **catch-all alias**. This affects the two pipeline stages differently:
+
+- At **SMTP time** (the `smtpd` daemon), the catch-all alias makes Postfix accept arbitrary local-parts on the SRS domain, so `srs0=…@srs.example.com` passes recipient validation.
+- At **`cleanup` time**, Postfix applies `recipient_canonical_maps` *before* `virtual_alias_maps` rewriting (per Postfix's documented `cleanup(8)` ordering). So `srs0=…@srs.example.com` is matched against postsrsd's reverse map and rewritten to the original recipient before the catch-all alias is consulted — the catch-all only matters as a fallback for non-SRS-formatted addresses that happen to be delivered to the SRS domain.
 
 #### Procedure (mailcow admin UI)
 
@@ -91,6 +94,8 @@ The fix is to put the SRS domain into Postfix's `virtual_alias_maps` instead, by
 
 ### 4. Drop the postsrsd config
 
+In the commands below, `<this-repo>` is the directory where you have cloned (or downloaded a tarball of) the [postsrsd repository](https://github.com/tekgnosis-net/postsrsd). Substitute the actual path on your host.
+
 ```bash
 mkdir -p data/conf/postsrsd
 cp <this-repo>/conf/postsrsd.conf data/conf/postsrsd/postsrsd.conf
@@ -100,7 +105,7 @@ $EDITOR data/conf/postsrsd/postsrsd.conf
 Edit two lines:
 
 - `domains = { … }` — replace with your hosted domains. See "What goes in `domains`" below.
-- `srs-domain = "srs.example.net"` — replace with your actual SRS domain (e.g. `srs.example.com`).
+- `srs-domain = "srs.example.net"` (the shipped file's placeholder) — replace with your actual SRS domain. The rest of this tutorial uses `srs.example.com`; substitute your real value.
 
 #### What goes in `domains`
 
