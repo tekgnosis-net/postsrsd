@@ -1,14 +1,27 @@
-postsrsd-mailcow:
-  build:
-    dockerfile: ./Dockerfile
-  security_opt:
-    - no-new-privileges
-  restart: unless-stopped
-  environment:
-    - TZ=Australia/Sydney
-  volumes:
-    - ./data/conf/postsrsd/postsrsd.conf:/etc/postsrsd/postsrsd.conf:ro
-    - postsrsd-secrets:/var/lib/postsrsd/secrets
-  networks:
-    mailcow-network:
-      ipv4_address: ${IPV4_NETWORK:-172.22.1}.42
+# PostSRSd sidecar for mailcow — reference sample.
+# Splice this service block into your existing docker-compose.override.yml at
+# the mailcow stack root. Do not deploy this file standalone.
+#
+# Variables resolved from mailcow.conf at compose time:
+#   ${IPV4_NETWORK}  — mailcow's docker network base (default: 172.22.1)
+#   ${TZ}            — mailcow's timezone (default: UTC)
+#
+# Edit only the .42 host octet if it collides with another service on
+# your network. See README §6.1 for the full deployment walkthrough.
+services:
+  postsrsd-mailcow:
+    image: ghcr.io/tekgnosis-net/postsrsd:latest
+    security_opt:
+      - no-new-privileges
+    restart: unless-stopped
+    environment:
+      - TZ=${TZ:-UTC}
+    volumes:
+      - ./data/conf/postsrsd/postsrsd.conf:/etc/postsrsd/postsrsd.conf:ro
+      - postsrsd-secrets:/etc/postsrsd/secrets
+    networks:
+      mailcow-network:
+        ipv4_address: ${IPV4_NETWORK:-172.22.1}.42
+
+volumes:
+  postsrsd-secrets:
