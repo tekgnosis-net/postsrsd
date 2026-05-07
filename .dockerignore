@@ -5,8 +5,6 @@
 .gitignore
 notes
 notes/**
-supertool
-CLAUDE.md
 
 # Conf samples and docs — not part of the image
 conf

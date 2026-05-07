@@ -50,7 +50,7 @@ When postsrsd rewrites a forwarded message, it changes the envelope sender from 
 | Record | Value | Why |
 | :-- | :-- | :-- |
 | `srs.example.com.` `A` | mailcow's public IPv4 | Lets mailcow accept inbound bounces; lets ACME pass HTTP-01 challenge for the TLS cert. |
-| `srs.example.com.` `AAAA` | mailcow's public IPv6 (if available) | **(OPT)** _Same as A but for IPv6; modern receivers prefer IPv6._ |
+| `srs.example.com.` `AAAA` | mailcow's public IPv6 (if available) | **(OPT)** _Same as A but for IPv6; modern receivers prefer IPv6. It should be noted that the Compose only uses IPv4 so this is optional and for future use based on upstream support._ |
 | `srs.example.com.` `MX 10` | mailcow's MX hostname (typically the same as your other domains' MX, e.g. `mail.example.com.`) | Receivers look up MX to deliver bounces back to mailcow. |
 | `srs.example.com.` `TXT` | `"v=spf1 mx -all"` | Authorises whatever the SRS domain's MX resolves to as a sender, since forwarded mail re-leaves through that MX. |
 | `_dmarc.srs.example.com.` `TXT` | `"v=DMARC1; p=none; rua=mailto:dmarc@example.com"` | Optional. `p=none` because forwarded mail can't satisfy stricter alignment. |
