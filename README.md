@@ -1,6 +1,6 @@
 # postsrsd
 
-A Docker image of [PostSRSd](https://github.com/roehling/postsrsd) packaged for use as a sidecar in [mailcow](https://mailcow.email/) deployments. Implements the [Sender Rewriting Scheme](https://en.wikipedia.org/wiki/Sender_Rewriting_Scheme) so a forwarding mailcow instance can rewrite envelope senders to pass SPF at the next hop.
+A prebuilt Docker image of [PostSRSd](https://github.com/roehling/postsrsd) packaged for use as a sidecar in [mailcow](https://mailcow.email/) deployments. Implements the [Sender Rewriting Scheme](https://en.wikipedia.org/wiki/Sender_Rewriting_Scheme) so a forwarding mailcow instance can rewrite envelope senders to pass SPF at the next hop.
 
 This image and its accompanying configs grew out of a need for SRS (and a stable prebuilt docker image) for my own mailcow deployment and large part from [mailcow issue #2418](https://github.com/mailcow/mailcow-dockerized/issues/2418), specifically [ethrgeist's deployment writeup](https://github.com/mailcow/mailcow-dockerized/issues/2418#issuecomment-3416844091). It packages that work as a published, multi-arch image with documentation that fills in the bits the issue thread under-explained — DNS, mailcow domain registration, Dovecot Sieve, and tag pinning, hopefully helping other mailcow users requiring SRS support at the same time.
 
