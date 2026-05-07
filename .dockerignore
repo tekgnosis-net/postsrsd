@@ -1,0 +1,16 @@
+# Local-only and tooling
+.git
+.git/**
+.github
+.gitignore
+notes
+notes/**
+supertool
+CLAUDE.md
+
+# Conf samples and docs — not part of the image
+conf
+conf/**
+LICENSE
+README.md
+*.md
