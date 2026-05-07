@@ -11,4 +11,4 @@ postsrsd-mailcow:
     - postsrsd-secrets:/var/lib/postsrsd/secrets
   networks:
     mailcow-network:
-      ipv4_address: 172.22.1.42
+      ipv4_address: ${IPV4_NETWORK:-172.22.1}.42
