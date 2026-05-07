@@ -34,12 +34,49 @@ jobs:
       bumped: ${{ steps.detect.outputs.bumped }}
       should_publish: ${{ steps.detect.outputs.should_publish }}
     steps:
-      - id: detect
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - name: Detect Alpine APK version, current pin, and publish need
+        id: detect
+        env:
+          OVERRIDE: ${{ inputs.version_override }}
         run: |
-          echo "apk_version=stub"      >> "$GITHUB_OUTPUT"
-          echo "current_pin=stub"      >> "$GITHUB_OUTPUT"
-          echo "bumped=false"          >> "$GITHUB_OUTPUT"
-          echo "should_publish=false"  >> "$GITHUB_OUTPUT"
+          set -euo pipefail
+          if [[ -n "$OVERRIDE" ]]; then
+            APK_VERSION="$OVERRIDE"
+            echo "Using override: $APK_VERSION"
+          else
+            APK_VERSION=$(curl -fsSL "https://dl-cdn.alpinelinux.org/alpine/${ALPINE_BRANCH}/community/x86_64/" \
+              | grep -oE 'postsrsd-[0-9][^"]*\.apk' \
+              | sort -V \
+              | tail -1 \
+              | sed 's/^postsrsd-//; s/\.apk$//')
+          fi
+          [[ "$APK_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+-r[0-9]+$ ]] \
+            || { echo "ERROR: bad version '$APK_VERSION'" >&2; exit 1; }
+
+          CURRENT_PIN=$(grep -oE 'POSTSRSD_PACKAGE_VERSION=[^[:space:]]+' Dockerfile | head -1 | cut -d= -f2)
+
+          BUMPED=false
+          [[ "$APK_VERSION" != "$CURRENT_PIN" ]] && BUMPED=true
+
+          SHOULD_PUBLISH=true
+          if docker manifest inspect "${IMAGE}:${APK_VERSION}" >/dev/null 2>&1; then
+            SHOULD_PUBLISH=false
+          fi
+
+          {
+            echo "apk_version=$APK_VERSION"
+            echo "current_pin=$CURRENT_PIN"
+            echo "bumped=$BUMPED"
+            echo "should_publish=$SHOULD_PUBLISH"
+          } >> "$GITHUB_OUTPUT"
+          echo "apk_version=$APK_VERSION"
+          echo "current_pin=$CURRENT_PIN"
+          echo "bumped=$BUMPED"
+          echo "should_publish=$SHOULD_PUBLISH"
 
   bump-dockerfile:
     needs: detect-version
