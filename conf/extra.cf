@@ -1,0 +1,5 @@
+# SRS via PostSRSd
+sender_canonical_maps = socketmap:inet:172.22.1.42:10003:forward
+sender_canonical_classes = envelope_sender
+recipient_canonical_maps = socketmap:inet:172.22.1.42:10003:reverse
+recipient_canonical_classes = envelope_recipient, header_recipient

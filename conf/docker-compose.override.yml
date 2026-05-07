@@ -1,0 +1,14 @@
+postsrsd-mailcow:
+  build:
+    dockerfile: ./Dockerfile
+  security_opt:
+    - no-new-privileges
+  restart: unless-stopped
+  environment:
+    - TZ=Australia/Sydney
+  volumes:
+    - ./data/conf/postsrsd/postsrsd.conf:/etc/postsrsd/postsrsd.conf:ro
+    - postsrsd-secrets:/var/lib/postsrsd/secrets
+  networks:
+    mailcow-network:
+      ipv4_address: 172.22.1.42
