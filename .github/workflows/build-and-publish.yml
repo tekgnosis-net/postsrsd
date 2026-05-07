@@ -120,4 +120,46 @@ jobs:
       contents: read
       packages: write
     steps:
-      - run: echo "filled in by task 9"
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - uses: docker/setup-qemu-action@v3
+        with:
+          platforms: arm64
+
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Compute tags and labels
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.IMAGE }}
+          tags: |
+            type=raw,value=latest
+            type=raw,value=${{ needs.detect-version.outputs.apk_version }}
+          labels: |
+            org.opencontainers.image.title=postsrsd
+            org.opencontainers.image.description=PostSRSd sidecar for mailcow (Alpine APK ${{ needs.detect-version.outputs.apk_version }})
+            org.opencontainers.image.licenses=MIT
+            org.opencontainers.image.version=${{ needs.detect-version.outputs.apk_version }}
+
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          build-args: |
+            POSTSRSD_PACKAGE_VERSION=${{ needs.detect-version.outputs.apk_version }}
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          provenance: true
+          sbom: true
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
