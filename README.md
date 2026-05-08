@@ -354,7 +354,7 @@ If you specifically need milter mode (e.g., to integrate alongside a non-Postfix
 
 - Timo Röhling and the upstream [postsrsd](https://github.com/roehling/postsrsd) project.
 - [nowhere.dk's *Implementing SRS with Mailcow*](https://nowhere.dk/articles/implementing-srs-with-mailcow/) — surfaced the Dovecot Sieve `sieve_redirect_envelope_from` requirement; also documents an alternative architecture using a MySQL transport map and a dedicated `cleanup-srs` Postfix service (referenced in [Reference → Alternative architecture: selective routing via transport map](#alternative-architecture-selective-routing-via-transport-map)).
-- [alvinhochun's original mailcow GitHub issue](https://github.com/mailcow/mailcow-dockerized/issues/2418) - The issue that helped me setup SRS initially.
+- [alvinhochun's original mailcow GitHub issue](https://github.com/mailcow/mailcow-dockerized/issues/2418) - The issue thread that really helped me setup SRS initially.
 - [ethrgeist](https://github.com/mailcow/mailcow-dockerized/issues/2418#issuecomment-3416844091) — the deployment writeup that the Dockerfile and configs are based on.
 
 ## License
