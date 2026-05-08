@@ -92,7 +92,7 @@ The fix is to put the SRS domain into Postfix's `virtual_alias_maps` instead, by
 
 **Optional: enable DKIM.** Mail Setup → Configuration → ARC/DKIM keys → Add → select the SRS domain → save → publish the resulting TXT record on the SRS domain.
 
-### 4. Drop the postsrsd config
+### 4. Drop in the postsrsd config from provided template
 
 In the commands below, `<this-repo>` is the directory where you have cloned (or downloaded a tarball of) the [postsrsd repository](https://github.com/tekgnosis-net/postsrsd). Substitute the actual path on your host.
 
