@@ -84,11 +84,12 @@ The fix is to put the SRS domain into Postfix's `virtual_alias_maps` instead, by
    - Domain: `srs.example.com`
    - Description: `SRS rewrite domain (PostSRSd)` (free-form; helps the next admin)
    - Aliases / Mailboxes: leave at defaults; you do not need to provision either.
-   - **Active**: on. **Active for SOGo**: off. **Relay this domain**: off.
+   - **Active**: on. 
+   - **Relay this domain**: off.
    - Save.
 2. **Mail Setup → Configuration → Aliases → Add Alias.**
    - Alias: leave the local-part empty so the alias becomes `@srs.example.com`.
-   - Goto: any valid mailbox you control (e.g. `postmaster@example.com`). This address is functionally a no-op because `recipient_canonical_maps` rewrites `srs0=…` to the original recipient before the catch-all fires.
+   - Goto: any valid mailbox you control (e.g. `postmaster@example.com`). This address is functionally a no-op because `recipient_canonical_maps` rewrites `srs0=…` to the original recipient before the catch-all fires. (_Note: You should always have a postmaster email account for all your domains as a good practice, so this is a good time to create one if you don't have it already._)
    - **Active**: on.
    - Save.
 3. **Verify.** From any external host: `swaks --to test@srs.example.com --from postmaster@example.com --server <mailcow-host>`. Expected: SMTP transaction completes; no "User unknown" / "Recipient address rejected".
