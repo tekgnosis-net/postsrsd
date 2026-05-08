@@ -129,7 +129,7 @@ What NOT to put in it:
 
 For multi-tenant setups with many domains, use postsrsd's `domains-file` option (see the comment in the sample `postsrsd.conf`) and feed it a one-domain-per-line file.  
 
-==_Note: The conf file is well commented with references back to the sections in this README._==
+<mark>_Note: The conf file is well commented with references back to the sections in this README._</mark>
 
 ### 5. Append the Postfix snippet
 
