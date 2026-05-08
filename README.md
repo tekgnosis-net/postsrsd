@@ -112,7 +112,6 @@ Edit two lines:
 - `domains = { … }` — replace with your hosted domains. See "What goes in `domains`" below.
 - `srs-domain = "srs.example.net"` (the shipped file's placeholder) — replace with your actual SRS domain. The rest of this tutorial uses `srs.example.com`; substitute your real value.  
 
-<mark>_Note: Refer to mailcow documentation for postfix main.cf extension [here](https://docs.mailcow.email/manual-guides/Postfix/u_e-postfix-extra_cf/)_</mark>
 
 #### What goes in `domains`
 
@@ -140,7 +139,9 @@ For multi-tenant setups with many domains, use postsrsd's `domains-file` option 
 cat <this-repo>/conf/extra.cf >> data/conf/postfix/extra.cf
 ```
 
-The snippet uses `172.22.1.42:10003`. **If you have changed `IPV4_NETWORK` in `mailcow.conf`** away from the default `172.22.1`, edit the IP in `extra.cf` to match before appending — Postfix does not expand shell variables (only Compose does, in step 7).
+The snippet uses `172.22.1.42:10003`. **If you have changed `IPV4_NETWORK` in `mailcow.conf`** away from the default `172.22.1`, edit the IP in `extra.cf` to match before appending — Postfix does not expand shell variables (only Compose does, in step 7).  
+
+<mark>_Note: Refer to mailcow documentation for postfix main.cf extension [here](https://docs.mailcow.email/manual-guides/Postfix/u_e-postfix-extra_cf/)_</mark>
 
 ### 6. (Conditional) Configure Dovecot for Sieve-based forwarding
 
