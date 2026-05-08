@@ -332,6 +332,16 @@ Without the two-line interim, overwriting the old key with a new one in a single
 
 `docker-compose.override.yml` uses `${IPV4_NETWORK:-172.22.1}.42` — Compose expands this from `mailcow.conf` automatically. But `data/conf/postfix/extra.cf` does **not** expand environment variables; it is plain Postfix config. If you have changed `IPV4_NETWORK` away from the default `172.22.1`, you must hand-edit the literal IP in `extra.cf` to match. The two files will silently disagree otherwise, and Postfix will fail to reach postsrsd on the docker network.
 
+### Alternative architecture: selective routing via transport map
+
+This image and tutorial use the upstream-canonical postsrsd integration: `sender_canonical_maps` and `recipient_canonical_maps` directives in Postfix's `extra.cf`, with postsrsd's own `domains = { … }` list (in `postsrsd.conf`) deciding what's local vs. foreign. Every outbound message's envelope sender is consulted via socketmap; postsrsd passes local senders through unchanged and rewrites foreign senders.
+
+[nowhere.dk's *Implementing SRS with Mailcow*](https://nowhere.dk/articles/implementing-srs-with-mailcow/) documents an **alternative architecture** that pushes that local-vs-foreign decision into Postfix itself, using a MySQL transport map (querying mailcow's `domain` and `alias_domain` tables directly) plus a dedicated `cleanup-srs` service declared in `master.cf` and an internal `127.0.0.1:10029 smtpd` listener. postsrsd is then only consulted for the subset of mail that's already been determined to be a non-local outbound forward.
+
+The two approaches are functionally equivalent for the SRS rewrite itself. The selective-routing approach trades a higher up-front config-file count (two new MySQL `.cf` files, two new Postfix services, plus careful coordination between them) for tighter automatic sync with mailcow's domain list — when you add a domain in the mailcow UI, the routing decision picks it up immediately, with no `domains = { … }` edit in `postsrsd.conf` to remember. It also depends on mailcow's internal MySQL schema and on paths like `/opt/postfix/conf/sql/` that may shift in future mailcow releases.
+
+Choose the alternative architecture if you operate at multi-tenant or high-volume scale and want the local-domain decision to live in mailcow's database. Stick with this image's tutorial setup otherwise — it is upstream-canonical, simpler, and resilient to mailcow internal changes.
+
 ### Milter mode is not supported in this image
 
 The Alpine `community/postsrsd` package is built without `-DWITH_MILTER=ON`, and the shipped binary contains zero libmilter linkage. This image therefore runs in socketmap mode only. Socketmap is the upstream-default integration and is functionally equivalent to milter for SRS — the rewrite happens in Postfix's `cleanup` daemon either way.
@@ -343,7 +353,7 @@ If you specifically need milter mode (e.g., to integrate alongside a non-Postfix
 ## Acknowledgements and additional references
 
 - Timo Röhling and the upstream [postsrsd](https://github.com/roehling/postsrsd) project.
-- [nowhere.dk's *Implementing SRS with Mailcow*](https://nowhere.dk/articles/implementing-srs-with-mailcow/) — surfaced the Dovecot Sieve `sieve_redirect_envelope_from` requirement.
+- [nowhere.dk's *Implementing SRS with Mailcow*](https://nowhere.dk/articles/implementing-srs-with-mailcow/) — surfaced the Dovecot Sieve `sieve_redirect_envelope_from` requirement; also documents an alternative architecture using a MySQL transport map and a dedicated `cleanup-srs` Postfix service (referenced in [Reference → Alternative architecture: selective routing via transport map](#alternative-architecture-selective-routing-via-transport-map)).
 - [alvinhochun's original mailcow GitHub issue](https://github.com/mailcow/mailcow-dockerized/issues/2418) - The issue that helped me setup SRS initially.
 - [ethrgeist](https://github.com/mailcow/mailcow-dockerized/issues/2418#issuecomment-3416844091) — the deployment writeup that the Dockerfile and configs are based on.
 
