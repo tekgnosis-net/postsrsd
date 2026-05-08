@@ -64,7 +64,7 @@ When postsrsd rewrites a forwarded message, it changes the envelope sender from 
 
 ### 3. Register the SRS domain in mailcow — the easy-to-miss step
 
-Skipping this step is perhaps, the single most SRS-on-mailcow mistake. Bounces will fail at SMTP time before postsrsd's reverse map ever fires. Debugging SRS related issues can beicome quite frustrating without this.
+Skipping this step is perhaps, the single-most obvious SRS-on-mailcow mistake. Bounces will fail at SMTP time before postsrsd's reverse map ever fires. Debugging SRS related issues can beicome quite frustrating without this.
 
 #### Why two settings, not one
 
