@@ -242,7 +242,7 @@ The shipped `conf/postsrsd.conf` surfaces the upstream-documented optional knobs
 
 **Do not change `hash-length` or `hash-minimum` unless you understand SRS hash rotation.** Misconfiguration can turn the server into a spam relay. The upstream defaults (`4` / `4`) are correct.
 
-### Secret rotation
+### (Optional) Secret rotation
 
 Postsrsd reads the secrets file line by line, signs new addresses with the first line, and accepts any line for verification. Rotation procedure:
 
@@ -267,6 +267,7 @@ If you specifically need milter mode (e.g., to integrate alongside a non-Postfix
 
 - Timo Röhling and the upstream [postsrsd](https://github.com/roehling/postsrsd) project.
 - [nowhere.dk's *Implementing SRS with Mailcow*](https://nowhere.dk/articles/implementing-srs-with-mailcow/) — surfaced the Dovecot Sieve `sieve_redirect_envelope_from` requirement.
+- [mailcow GitHub issue](https://github.com/mailcow/mailcow-dockerized/issues/2418) - The issue that helped me setup SRS initially.
 - [ethrgeist](https://github.com/mailcow/mailcow-dockerized/issues/2418#issuecomment-3416844091) — the deployment writeup that the Dockerfile and configs are based on.
 
 ## License
