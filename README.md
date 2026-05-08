@@ -175,6 +175,8 @@ docker compose restart postfix-mailcow
 docker compose restart dovecot-mailcow
 ```
 
+On the **first start** of a fresh `postsrsd-secrets` volume, the container's entrypoint detects that the secrets file is missing and auto-generates a 32-character SRS HMAC key in `/etc/postsrsd/secrets/list` (mode `600`, owned by the in-container `postsrsd` user). The daemon then reads that file and uses the key to sign rewritten envelope sender addresses. **You do not need to provision the secret yourself.** See [(Optional) Secret rotation](#optional-secret-rotation) below for the lifecycle and how to rotate the key if you ever need to.
+
 ### 9. Verify
 
 Three checks:
@@ -253,12 +255,78 @@ The shipped `conf/postsrsd.conf` surfaces the upstream-documented optional knobs
 
 ### (Optional) Secret rotation
 
-Postsrsd reads the secrets file line by line, signs new addresses with the first line, and accepts any line for verification. Rotation procedure:
+Most installations never rotate. The SRS secret is internal infrastructure: it never appears in mail headers, isn't transmitted over the wire, and doesn't expire. Rotate only if you suspect the secret has leaked (e.g., a volume backup ended up somewhere it shouldn't), if your security policy mandates periodic rotation, or if you want a clean key after rebuilding the stack.
 
-1. Prepend a new 32-character line to `/etc/postsrsd/secrets/list` (inside the named volume).
-2. `docker compose restart postsrsd-mailcow`.
-3. Leave the old line in place for at least the maximum bounce-handling window of your forwarded recipients (commonly 7-30 days).
-4. Remove the old line and restart again.
+#### How the SRS secret comes to exist in the first place
+
+The lifecycle is fully automatic — nobody hand-creates the file:
+
+1. **Build time.** The Dockerfile creates `/etc/postsrsd/secrets/` as an empty `0700` directory owned by the in-container `postsrsd` user, and patches the in-image `postsrsd.conf` so its `secrets-file = "/etc/postsrsd/secrets/list"` line points at the right path. No `list` file exists yet.
+2. **First container start.** Compose mounts the named volume `postsrsd-secrets` at `/etc/postsrsd/secrets`, masking the empty in-image directory with a likewise-empty Docker volume. The CMD entrypoint runs:
+   ```sh
+   umask 0077
+   if [ ! -s "$POSTSRSD_SECRET_PATH" ]; then
+     tr -dc '1-9a-zA-Z' < /dev/urandom | head -c 32 > "$POSTSRSD_SECRET_PATH"
+   fi
+   exec postsrsd
+   ```
+   The `[ ! -s ... ]` test fires because `list` doesn't exist, so 32 random alphanumeric characters (excluding visually-ambiguous `0` and `O`) are written to `/etc/postsrsd/secrets/list` with mode `600` (thanks to `umask 0077`). The daemon then reads that file as its HMAC key.
+3. **Subsequent starts.** The file already has content, the auto-seed step is skipped, and postsrsd reads the same key. SRS signatures from previous runs continue to verify, so in-flight rewritten addresses still bounce correctly.
+4. **Volume lifecycle.** As long as the named volume exists, the secret persists. `docker compose down` (without `-v`) keeps the volume; `docker compose down -v` removes it (and silently rotates the secret on the next `up`, invalidating any in-flight rewritten addresses without a grace period).
+
+You can inspect the current secret if you want to confirm the file was created:
+
+```sh
+docker compose exec postsrsd-mailcow cat /etc/postsrsd/secrets/list
+```
+
+Expect a single 32-character alphanumeric line.
+
+#### Why postsrsd supports multiple keys
+
+Postsrsd reads the secrets file line by line. The **first** line is used to sign newly-rewritten outgoing addresses. **Any** line is accepted for verifying incoming bounces. Rotation therefore proceeds gracefully:
+
+- Add the new key as the first line, leaving the old key beneath it.
+- Restart postsrsd. New outgoing rewrites are signed with the new key; bounces returning with addresses that were signed by *either* the new or the old key still verify.
+- Wait until any in-flight forwarded mail has been delivered or bounced. This is the **bounce-handling window** — typically 7-30 days, longer if you forward to receivers known to retry slowly.
+- Remove the old key and restart again. From this point only the new key verifies.
+
+Without the two-line interim, overwriting the old key with a new one in a single step would break verification of any bounce returning for a forward that was rewritten with the old key — your sender would silently lose those bounce notifications.
+
+#### Detailed rotation procedure
+
+1. **Generate a new 32-character secret** on the mailcow host:
+   ```sh
+   NEW=$(tr -dc '1-9a-zA-Z' < /dev/urandom | head -c 32)
+   echo "New SRS secret (will be prepended to the secrets file): $NEW"
+   ```
+2. **Prepend the new secret** to the existing file inside the container. The shell pipe below works on busybox/POSIX sh, so it's portable to Alpine without depending on GNU sed quirks:
+   ```sh
+   docker compose exec postsrsd-mailcow sh -c "
+     current=\$(cat /etc/postsrsd/secrets/list)
+     printf '%s\n%s\n' '$NEW' \"\$current\" > /etc/postsrsd/secrets/list
+     echo '--- secrets file now contains: ---'
+     cat /etc/postsrsd/secrets/list
+   "
+   ```
+   Expect two 32-character lines, the new key on top.
+3. **Restart postsrsd** so it re-reads the file:
+   ```sh
+   docker compose restart postsrsd-mailcow
+   ```
+   New outgoing rewrites are now signed with the new key; bounces signed with either key still verify.
+4. **Wait for the bounce-handling window to elapse** — commonly 7-30 days, depending on your typical forward latency.
+5. **Remove the old line** and restart:
+   ```sh
+   docker compose exec postsrsd-mailcow sh -c '
+     head -n 1 /etc/postsrsd/secrets/list > /etc/postsrsd/secrets/list.new
+     mv /etc/postsrsd/secrets/list.new /etc/postsrsd/secrets/list
+     echo "--- secrets file now contains: ---"
+     cat /etc/postsrsd/secrets/list
+   '
+   docker compose restart postsrsd-mailcow
+   ```
+   Expect a single line. After this point, only signatures from the new key verify. Rotation complete.
 
 ### `IPV4_NETWORK` and the postfix-vs-compose asymmetry
 
