@@ -2,7 +2,10 @@
 
 A prebuilt Docker image of [PostSRSd](https://github.com/roehling/postsrsd) packaged for use as a sidecar in [mailcow](https://mailcow.email/) deployments. Implements the [Sender Rewriting Scheme](https://en.wikipedia.org/wiki/Sender_Rewriting_Scheme) so a forwarding mailcow instance can rewrite envelope senders to pass SPF at the next hop.
 
-This image and its accompanying configs grew out of a need for SRS (and a stable prebuilt docker image) for my own mailcow deployment and large part from [mailcow issue #2418](https://github.com/mailcow/mailcow-dockerized/issues/2418), specifically [ethrgeist's deployment writeup](https://github.com/mailcow/mailcow-dockerized/issues/2418#issuecomment-3416844091). It packages that work as a published, multi-arch image with documentation that fills in the bits the issue thread under-explained — DNS, mailcow domain registration, Dovecot Sieve, and tag pinning, hopefully helping other mailcow users requiring SRS support at the same time.
+## Brief background and Synopsis
+This image and its accompanying configs grew out of a need for SRS (and a stable prebuilt docker image) for my own mailcow deployment and intial iterative implementation after scouring internet for information. The large part of guidance from [mailcow issue #2418](https://github.com/mailcow/mailcow-dockerized/issues/2418), and the [tutorial from the blog](https://nowhere.dk/articles/implementing-srs-with-mailcow/) helped me set it up then. However the need to keep it updated with the upstream [PostSRSd](https://github.com/roehling/postsrsd) and the need for a prebuilt Docker image got me here, and taking inspiration from [ethrgeist's deployment writeup](https://github.com/mailcow/mailcow-dockerized/issues/2418#issuecomment-3416844091), I put together this repo that ships an automated prebuilt Docker image as a multi-arch image. 
+ 
+In addition to the prebuilt Docker image, I have put together a detailed tutorial with documentation that fills in the bits the [issue thread](https://github.com/mailcow/mailcow-dockerized/issues/2418) under-explained — DNS, mailcow domain registration, Dovecot Sieve, and tag pinning, based on my own experience in implementing this, to hopefully helping other mailcow users requiring SRS support with their deployment much more easily than it was for me!
 
 ## Image
 
@@ -22,12 +25,12 @@ The version tag matches the Alpine `community/postsrsd` APK version, including t
 
 - A running mailcow stack (any current release).
 - Shell access to the mailcow host with permission to edit `mailcow.conf` and the files under `data/conf/`.
-- Permission to add DNS records on the domain you intend to use as the SRS rewrite domain.
-- Permission to add a domain and an alias in the mailcow admin UI.
+- Admin permissions to add DNS records on the domain you intend to use as the SRS rewrite domain.
+- Admin permissions to add a domain and an alias in the mailcow admin UI.
 
 ### 1. Choose your SRS domain
 
-Pick a **dedicated subdomain** of one of your hosted domains, it would be preferred to use the mailcow domain as it has the reverse DNS, DKIM, DMARC and SPF already in use, set & validated. For the rest of this tutorial we will use `srs.example.com` as a placeholder — substitute your real value throughout.
+Pick a **dedicated subdomain** of one of your hosted domains, it would be preferred to use the mailcow server's domain as it has the reverse DNS, DKIM, DMARC and SPF already setup, validated and in-use. For the rest of this tutorial we will use `srs.example.com` as a placeholder — substitute with your real **_SRS Domain_** throughout.
 
 Two reasons to use a dedicated subdomain rather than a real user-facing domain:
 
@@ -36,7 +39,7 @@ Two reasons to use a dedicated subdomain rather than a real user-facing domain:
 
 ### 2. Configure DNS for the SRS domain
 
-This is the section the original mailcow issue thread skipped, and it routinely catches new SRS users out.
+This is the section the original mailcow issue thread skipped, and it routinely catches new SRS users out (It certainly did for me!).
 
 #### Why DNS matters for the SRS domain
 
@@ -61,7 +64,7 @@ When postsrsd rewrites a forwarded message, it changes the envelope sender from 
 
 ### 3. Register the SRS domain in mailcow — the easy-to-miss step
 
-Skipping this step is perhaps, the single most common SRS-on-mailcow mistake. Bounces will fail at SMTP time before postsrsd's reverse map ever fires.
+Skipping this step is perhaps, the single most SRS-on-mailcow mistake. Bounces will fail at SMTP time before postsrsd's reverse map ever fires. Debugging SRS related issues can beicome quite frustrating without this.
 
 #### Why two settings, not one
 
@@ -124,7 +127,9 @@ What NOT to put in it:
 - Domains your users forward *to* (e.g. `gmail.com`) — those are exactly the foreign senders SRS needs to rewrite.
 - Subdomains are not implicitly matched. If you accept mail for both `example.com` and `blog.example.com`, list both.
 
-For multi-tenant setups with many domains, use postsrsd's `domains-file` option (see the comment in the sample `postsrsd.conf`) and feed it a one-domain-per-line file.
+For multi-tenant setups with many domains, use postsrsd's `domains-file` option (see the comment in the sample `postsrsd.conf`) and feed it a one-domain-per-line file.  
+
+==_Note: The conf file is well commented with references back to the sections in this README._==
 
 ### 5. Append the Postfix snippet
 
@@ -267,7 +272,7 @@ If you specifically need milter mode (e.g., to integrate alongside a non-Postfix
 
 - Timo Röhling and the upstream [postsrsd](https://github.com/roehling/postsrsd) project.
 - [nowhere.dk's *Implementing SRS with Mailcow*](https://nowhere.dk/articles/implementing-srs-with-mailcow/) — surfaced the Dovecot Sieve `sieve_redirect_envelope_from` requirement.
-- [mailcow GitHub issue](https://github.com/mailcow/mailcow-dockerized/issues/2418) - The issue that helped me setup SRS initially.
+- [alvinhochun's original mailcow GitHub issue](https://github.com/mailcow/mailcow-dockerized/issues/2418) - The issue that helped me setup SRS initially.
 - [ethrgeist](https://github.com/mailcow/mailcow-dockerized/issues/2418#issuecomment-3416844091) — the deployment writeup that the Dockerfile and configs are based on.
 
 ## License
