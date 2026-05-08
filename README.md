@@ -110,7 +110,9 @@ $EDITOR data/conf/postsrsd/postsrsd.conf
 Edit two lines:
 
 - `domains = { … }` — replace with your hosted domains. See "What goes in `domains`" below.
-- `srs-domain = "srs.example.net"` (the shipped file's placeholder) — replace with your actual SRS domain. The rest of this tutorial uses `srs.example.com`; substitute your real value.
+- `srs-domain = "srs.example.net"` (the shipped file's placeholder) — replace with your actual SRS domain. The rest of this tutorial uses `srs.example.com`; substitute your real value.  
+
+<mark>_Note: Refer to mailcow documentation for postfix main.cf extension [here](https://docs.mailcow.email/manual-guides/Postfix/u_e-postfix-extra_cf/)_</mark>
 
 #### What goes in `domains`
 
@@ -269,7 +271,7 @@ If you specifically need milter mode (e.g., to integrate alongside a non-Postfix
 
 ---
 
-## Acknowledgements
+## Acknowledgements and additional references
 
 - Timo Röhling and the upstream [postsrsd](https://github.com/roehling/postsrsd) project.
 - [nowhere.dk's *Implementing SRS with Mailcow*](https://nowhere.dk/articles/implementing-srs-with-mailcow/) — surfaced the Dovecot Sieve `sieve_redirect_envelope_from` requirement.
