@@ -33,15 +33,18 @@ jobs:
       current_pin: ${{ steps.detect.outputs.current_pin }}
       bumped: ${{ steps.detect.outputs.bumped }}
       should_publish: ${{ steps.detect.outputs.should_publish }}
+      dockerfile_changed: ${{ steps.detect.outputs.dockerfile_changed }}
     steps:
       - uses: actions/checkout@v4
         with:
           ref: main
+          fetch-depth: 2
 
       - name: Detect Alpine APK version, current pin, and publish need
         id: detect
         env:
           OVERRIDE: ${{ inputs.version_override }}
+          EVENT_NAME: ${{ github.event_name }}
         run: |
           set -euo pipefail
           if [[ -n "$OVERRIDE" ]]; then
@@ -62,20 +65,46 @@ jobs:
           BUMPED=false
           [[ "$APK_VERSION" != "$CURRENT_PIN" ]] && BUMPED=true
 
-          SHOULD_PUBLISH=true
-          if docker manifest inspect "${IMAGE}:${APK_VERSION}" >/dev/null 2>&1; then
-            SHOULD_PUBLISH=false
+          DOCKERFILE_CHANGED=false
+          if git rev-parse HEAD~1 >/dev/null 2>&1; then
+            if git diff --name-only HEAD~1 HEAD | grep -qE '^Dockerfile$'; then
+              DOCKERFILE_CHANGED=true
+            fi
           fi
+
+          TAG_EXISTS=false
+          if docker manifest inspect "${IMAGE}:${APK_VERSION}" >/dev/null 2>&1; then
+            TAG_EXISTS=true
+          fi
+
+          SHOULD_PUBLISH=false
+          case "$EVENT_NAME" in
+            workflow_dispatch)
+              SHOULD_PUBLISH=true
+              ;;
+            schedule)
+              [[ "$TAG_EXISTS" == "false" ]] && SHOULD_PUBLISH=true
+              ;;
+            push)
+              if [[ "$TAG_EXISTS" == "false" || "$DOCKERFILE_CHANGED" == "true" ]]; then
+                SHOULD_PUBLISH=true
+              fi
+              ;;
+          esac
 
           {
             echo "apk_version=$APK_VERSION"
             echo "current_pin=$CURRENT_PIN"
             echo "bumped=$BUMPED"
+            echo "dockerfile_changed=$DOCKERFILE_CHANGED"
             echo "should_publish=$SHOULD_PUBLISH"
           } >> "$GITHUB_OUTPUT"
           echo "apk_version=$APK_VERSION"
           echo "current_pin=$CURRENT_PIN"
           echo "bumped=$BUMPED"
+          echo "dockerfile_changed=$DOCKERFILE_CHANGED"
+          echo "tag_exists=$TAG_EXISTS"
+          echo "event_name=$EVENT_NAME"
           echo "should_publish=$SHOULD_PUBLISH"
 
   bump-dockerfile:
@@ -163,3 +192,135 @@ jobs:
           sbom: true
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+  release-notes:
+    needs: [detect-version, build-and-push]
+    if: |
+      always() &&
+      needs.build-and-push.result == 'success'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Compute upstream version and image digest
+        id: meta
+        env:
+          APK_VERSION: ${{ needs.detect-version.outputs.apk_version }}
+        run: |
+          set -euo pipefail
+          UPSTREAM_VERSION="${APK_VERSION%-r*}"
+          DIGEST=$(docker buildx imagetools inspect "${IMAGE}:${APK_VERSION}" --format '{{json .Manifest.Digest}}' | tr -d '"')
+          echo "upstream_version=$UPSTREAM_VERSION" >> "$GITHUB_OUTPUT"
+          echo "digest=$DIGEST" >> "$GITHUB_OUTPUT"
+
+      - name: Fetch upstream postsrsd release notes
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          UPSTREAM_VERSION: ${{ steps.meta.outputs.upstream_version }}
+        run: |
+          set -euo pipefail
+          NOTES=$(gh release view "$UPSTREAM_VERSION" \
+            --repo roehling/postsrsd \
+            --json body --jq .body 2>/dev/null || true)
+          if [[ -n "$NOTES" ]]; then
+            printf '%s\n' "$NOTES" > /tmp/upstream_notes.md
+          else
+            printf '%s\n' "(Upstream release notes not available for postsrsd ${UPSTREAM_VERSION}.)" \
+              > /tmp/upstream_notes.md
+          fi
+
+      - name: Compute repo changes since previous release tag
+        id: repo_changes
+        env:
+          APK_VERSION: ${{ needs.detect-version.outputs.apk_version }}
+        run: |
+          set -euo pipefail
+          PREV_TAG=$(git tag --list '[0-9]*.[0-9]*.[0-9]*-r[0-9]*' --sort=-v:refname \
+            | grep -vxF "$APK_VERSION" \
+            | head -1 || true)
+          if [[ -z "$PREV_TAG" ]]; then
+            RANGE=""
+            REL_PREV="(initial release)"
+          else
+            RANGE="${PREV_TAG}..HEAD"
+            REL_PREV="$PREV_TAG"
+          fi
+          {
+            for kind in feat fix docs chore ci refactor perf test; do
+              if [[ -n "$RANGE" ]]; then
+                MATCHES=$(git log "$RANGE" --pretty=format:'- %s' --grep="^$kind" || true)
+              else
+                MATCHES=$(git log --pretty=format:'- %s' --grep="^$kind" || true)
+              fi
+              if [[ -n "$MATCHES" ]]; then
+                case $kind in
+                  feat)     echo $'\n#### ✨ Features';;
+                  fix)      echo $'\n#### 🐛 Fixes';;
+                  docs)     echo $'\n#### 📚 Documentation';;
+                  chore)    echo $'\n#### 🔧 Maintenance';;
+                  ci)       echo $'\n#### 🤖 CI';;
+                  refactor) echo $'\n#### ♻️ Refactoring';;
+                  perf)     echo $'\n#### ⚡ Performance';;
+                  test)     echo $'\n#### ✅ Tests';;
+                esac
+                echo "$MATCHES"
+                echo
+              fi
+            done
+          } > /tmp/repo_changes.md
+          echo "prev_tag=$REL_PREV" >> "$GITHUB_OUTPUT"
+
+      - name: Compose release body
+        env:
+          APK_VERSION: ${{ needs.detect-version.outputs.apk_version }}
+          UPSTREAM_VERSION: ${{ steps.meta.outputs.upstream_version }}
+          DIGEST: ${{ steps.meta.outputs.digest }}
+          PREV_TAG: ${{ steps.repo_changes.outputs.prev_tag }}
+        run: |
+          set -euo pipefail
+          {
+            echo "## Image"
+            echo
+            echo '```'
+            echo "docker pull ${IMAGE}:${APK_VERSION}"
+            echo "docker pull ${IMAGE}:latest"
+            echo '```'
+            echo
+            echo "| | |"
+            echo "| :-- | :-- |"
+            echo "| Alpine APK version | \`${APK_VERSION}\` |"
+            echo "| Upstream postsrsd | [\`${UPSTREAM_VERSION}\`](https://github.com/roehling/postsrsd/releases/tag/${UPSTREAM_VERSION}) |"
+            echo "| Manifest digest | \`${DIGEST}\` |"
+            echo "| Architectures | \`linux/amd64\`, \`linux/arm64\` |"
+            echo
+            echo "## Upstream postsrsd ${UPSTREAM_VERSION}"
+            echo
+            cat /tmp/upstream_notes.md
+            echo
+            echo "## Repository changes"
+            echo
+            echo "Since previous release: ${PREV_TAG}"
+            cat /tmp/repo_changes.md
+          } > /tmp/release_notes.md
+          echo "--- release notes preview ---"
+          cat /tmp/release_notes.md
+
+      - name: Create or update GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          APK_VERSION: ${{ needs.detect-version.outputs.apk_version }}
+        run: |
+          set -euo pipefail
+          if gh release view "$APK_VERSION" >/dev/null 2>&1; then
+            gh release edit "$APK_VERSION" --notes-file /tmp/release_notes.md
+          else
+            gh release create "$APK_VERSION" \
+              --title "$APK_VERSION" \
+              --notes-file /tmp/release_notes.md \
+              --target main
+          fi
