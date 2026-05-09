@@ -131,6 +131,8 @@ What NOT to put in it:
 
 For multi-tenant setups with many domains, use postsrsd's `domains-file` option (see the comment in the sample `postsrsd.conf`) and feed it a one-domain-per-line file.  
 
+**Recommended addition: `"invalid"`.** Mailcow's `watchdog-mailcow` container periodically injects an SMTP health-probe into Postfix on port 589 with envelope-sender `watchdog@invalid` (visible in the upstream watchdog script as `check_smtp -f "watchdog@invalid"`). Without `"invalid"` in your `domains` list, postsrsd rewrites that probe address to `SRS0=…@srs.example.com` and logs the rewrite — generating roughly two log lines per minute of probe noise unrelated to real mail. Adding `"invalid"` tells postsrsd to treat `*@invalid` as local and pass it through unchanged. [RFC 6761](https://datatracker.ietf.org/doc/html/rfc6761) reserves this TLD as never-resolving, so no legitimate public mail uses it and there's no functional side effect. The shipped `conf/postsrsd.conf` reference sample includes it by default for this reason.
+
 <mark>_Note: The conf file is well commented with references back to the sections in this README._</mark>
 
 ### 5. Append the Postfix snippet
