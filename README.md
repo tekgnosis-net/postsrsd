@@ -328,9 +328,49 @@ Without the two-line interim, overwriting the old key with a new one in a single
    ```
    Expect a single line. After this point, only signatures from the new key verify. Rotation complete.
 
+### Why `extra.cf` uses a literal IPv4 address, not a service name
+
+Mailcow's `postfix-mailcow` container runs Postfix's `cleanup(8)` daemon under chroot — the `cleanup` line in `master.cf` has its 5th column set to `y`, jailing the daemon at `/var/spool/postfix/`. The chrooted `cleanup` is the daemon that consults `sender_canonical_maps` and `recipient_canonical_maps`, which our `extra.cf` snippet wires to postsrsd via socketmap.
+
+The chroot intentionally **does not contain `/etc/resolv.conf`**:
+
+```sh
+$ docker compose exec postfix-mailcow ls /var/spool/postfix/etc/
+# (no resolv.conf)
+$ docker compose exec postfix-mailcow cat /var/spool/postfix/etc/resolv.conf
+cat: /var/spool/postfix/etc/resolv.conf: No such file or directory
+```
+
+Without a resolver configuration inside the chroot, the chrooted `cleanup` process cannot do DNS at all. A service-name lookup like `socketmap:inet:postsrsd-mailcow:10003:forward` produces:
+
+```
+postfix/cleanup: warning: host or service postsrsd-mailcow:10003 not found: Temporary failure in name resolution
+postfix/cleanup: warning: connect to postsrsd-mailcow:10003: Cannot assign requested address
+postfix/cleanup: warning: table socketmap:inet:postsrsd-mailcow:10003:forward lookup error: Cannot assign requested address
+postfix/cleanup: warning: <message-id>: sender_canonical_maps map lookup problem for <sender> -- message not accepted, try again later
+```
+
+…and the message is deferred. (`Cannot assign requested address` here is `EADDRNOTAVAIL`, returned by the kernel when Postfix tries `connect(2)` to a result of a failed `getaddrinfo` — not a network reachability issue.)
+
+Mailcow's design choice is deliberate. Their normal mail flow doesn't need in-chroot DNS:
+
+- **Recipient validation** goes through the MySQL-backed `virtual_mailbox_maps` / `virtual_alias_maps` queries, not DNS.
+- **Outbound MX lookups** happen in the non-chrooted `smtp(8)` daemon, which has full resolver access.
+- The chroot acts as defence-in-depth for the cleanup pipeline, which doesn't normally do network lookups.
+
+A custom socketmap added in `extra.cf` is the unusual case that trips this constraint.
+
+The literal IPv4 address in the shipped `conf/extra.cf` (`172.22.1.42`) bypasses DNS entirely — Postfix passes the address straight to `connect(2)`, which works inside the chroot the same as outside. This is why the next subsection exists: Compose substitutes `${IPV4_NETWORK}` in `docker-compose.override.yml`, but Postfix's plain config in `extra.cf` cannot, so the literal IP must match by hand if you ever change `IPV4_NETWORK` in `mailcow.conf`.
+
+**Operators running postsrsd outside mailcow** (or with a non-chrooted Postfix) can use service-name resolution; that path is documented in the [Standalone-run recipe](#standalone-run-recipe).
+
+**Could mailcow fix this on their side?** Yes — by either (a) adding `resolv.conf` and `nsswitch.conf` to the chroot at container build time, or (b) switching the `cleanup` line in `master.cf` to `chroot=n`. Both are mailcow-side decisions; this image cannot make either change. If you'd find this useful upstream, opening an issue or PR on `mailcow/mailcow-dockerized` is the path.
+
 ### `IPV4_NETWORK` and the postfix-vs-compose asymmetry
 
 `docker-compose.override.yml` uses `${IPV4_NETWORK:-172.22.1}.42` — Compose expands this from `mailcow.conf` automatically. But `data/conf/postfix/extra.cf` does **not** expand environment variables; it is plain Postfix config. If you have changed `IPV4_NETWORK` away from the default `172.22.1`, you must hand-edit the literal IP in `extra.cf` to match. The two files will silently disagree otherwise, and Postfix will fail to reach postsrsd on the docker network.
+
+(For the underlying reason `extra.cf` carries a literal IP instead of a service name, see the previous subsection.)
 
 ### Alternative architecture: selective routing via transport map
 
