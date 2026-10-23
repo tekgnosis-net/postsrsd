@@ -115,7 +115,7 @@ Edit two lines:
 
 #### What goes in `domains`
 
-The `domains = { … }` list tells postsrsd which mail-from domains are *yours* (hosted by this mailcow instance). Any envelope sender ending in one of these domains is treated as local and is **not** rewritten. Anything else, when forwarded by a local user, *is* rewritten.
+The `domains = { … }` list tells postsrsd which mail-from domains are *yours* (hosted by this mailcow instance). Any envelope sender ending in one of these domains is treated as local and is **not** rewritten. Any other envelope sender *is* rewritten — on every message Postfix accepts, not only on forwards (see [Inbound mail is rewritten too](#inbound-mail-is-rewritten-too) below).
 
 What to put in it: every domain mailcow accepts mail for. The list under Mail Setup → Domains in the mailcow UI is the authoritative source. Example:
 
@@ -134,6 +134,21 @@ For multi-tenant setups with many domains, use postsrsd's `domains-file` option 
 **Recommended addition: `"invalid"`.** Mailcow's `watchdog-mailcow` container periodically injects an SMTP health-probe into Postfix on port 589 with envelope-sender `watchdog@invalid` (visible in the upstream watchdog script as `check_smtp -f "watchdog@invalid"`). Without `"invalid"` in your `domains` list, postsrsd rewrites that probe address to `SRS0=…@srs.example.com` and logs the rewrite — generating roughly two log lines per minute of probe noise unrelated to real mail. Adding `"invalid"` tells postsrsd to treat `*@invalid` as local and pass it through unchanged. [RFC 6761](https://datatracker.ietf.org/doc/html/rfc6761) reserves this TLD as never-resolving, so no legitimate public mail uses it and there's no functional side effect. The shipped `conf/postsrsd.conf` reference sample includes it by default for this reason.
 
 <mark>_Note: The conf file is well commented with references back to the sections in this README._</mark>
+
+#### Inbound mail is rewritten too
+
+After setup you will notice that **every** message from an external sender carries an SRS `Return-Path:` when it lands in a local mailbox — not just mail that is forwarded on. A plain inbound message from `alice@gmail.com` to `bob@example.com` is delivered with `Return-Path: <SRS0=…=gmail.com=alice@srs.example.com>`. This is expected, and it is how the upstream-canonical socketmap integration works.
+
+Why: Postfix applies `sender_canonical_maps` in the `cleanup(8)` daemon, on every message it accepts, *before* it has decided whether the message will be delivered locally or forwarded. The only input postsrsd receives is the envelope sender, so it has no way to tell "inbound for local delivery" from "about to be forwarded". Upstream's own [README](https://github.com/roehling/postsrsd/blob/main/README.rst) confirms this: only the *milter* integration can skip rewriting when all recipients are local, and it offers a `milter-rewrite-local` option "if you prefer the socketmap behavior". This image is socketmap-only (see [Milter mode is not supported in this image](#milter-mode-is-not-supported-in-this-image)).
+
+What it means in practice:
+
+- **Normal replies are unaffected.** Mail clients reply to the `From:` header, which SRS never touches.
+- **Bounces and auto-replies still reach the original sender.** Anything sent to the SRS address (a Sieve vacation reply, a DSN) is reverse-rewritten by `recipient_canonical_maps` on its way back out.
+- **SRS addresses expire.** Upstream's SRS implementation rejects reverse-rewrites whose embedded timestamp is older than 21 days ("Time stamp out of date"). An auto-reply or envelope-level reply to a message older than that bounces. Rotating the SRS secret has the same effect on addresses created under the old key (see [Secret rotation](#optional-secret-rotation)).
+- **Envelope-based filtering sees the SRS address.** Sieve rules, client filters or list software keyed on `Return-Path:` / envelope sender must account for the `SRS0=` form. rspamd is unaffected: it inspects the message at SMTP time, before `cleanup` rewrites it.
+
+If you need rewriting restricted to forwarded mail only, the [selective routing architecture](#alternative-architecture-selective-routing-via-transport-map) in the Reference section achieves that, at the cost of more Postfix plumbing.
 
 ### 5. Append the Postfix snippet
 
@@ -382,7 +397,9 @@ This image and tutorial use the upstream-canonical postsrsd integration: `sender
 
 The two approaches are functionally equivalent for the SRS rewrite itself. The selective-routing approach trades a higher up-front config-file count (two new MySQL `.cf` files, two new Postfix services, plus careful coordination between them) for tighter automatic sync with mailcow's domain list — when you add a domain in the mailcow UI, the routing decision picks it up immediately, with no `domains = { … }` edit in `postsrsd.conf` to remember. It also depends on mailcow's internal MySQL schema and on paths like `/opt/postfix/conf/sql/` that may shift in future mailcow releases.
 
-Choose the alternative architecture if you operate at multi-tenant or high-volume scale and want the local-domain decision to live in mailcow's database. Stick with this image's tutorial setup otherwise — it is upstream-canonical, simpler, and resilient to mailcow internal changes.
+There is one behavioural difference. With the canonical-maps setup, every inbound message from an external sender is delivered locally with an SRS `Return-Path:`, because `cleanup` rewrites before any routing decision (see [Inbound mail is rewritten too](#inbound-mail-is-rewritten-too)). With selective routing, only mail bound for a non-local recipient passes through the `cleanup-srs` service, so locally delivered mail keeps its original `Return-Path:`.
+
+Choose the alternative architecture if you operate at multi-tenant or high-volume scale and want the local-domain decision to live in mailcow's database, or if you specifically need local-delivery mail to keep its original envelope sender. Stick with this image's tutorial setup otherwise — it is upstream-canonical, simpler, and resilient to mailcow internal changes.
 
 ### Milter mode is not supported in this image
 
